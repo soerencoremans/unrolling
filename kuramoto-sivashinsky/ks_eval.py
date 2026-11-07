@@ -87,21 +87,20 @@ SN = 48
 CWD = os.path.abspath(os.getcwd())
 
 # ---
-
 import os
 import numpy as np
 import scipy as scp
-from phi.torch.flow import * 
+from phi.torch.flow import *
+import torch
+
 
 DISABLE_GCN = int(os.environ.get("KS_DISABLE_GCN", "0"))>0
 if not DISABLE_GCN:
     import torch_geometric
 
-TORCH.set_default_device("GPU")
-device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-if eval_params['cpu'] > 0:
-    device = 'cpu' ; TORCH.set_default_device("CPU") # for debugging
+device = 'cuda:0' if torch.cuda.is_available() and eval_params['cpu'] == 0 else 'cpu'
 device = torch.device(device)
+print("Using PyTorch device:", device)
 
 print("pytorch device: "+format(device))
 
@@ -381,18 +380,21 @@ def init_testdata(diff_ks):
         fname = './ks-testdata'+testset_dssuffix[di]+'.npz'
         if not os.path.exists(fname):
             log("Generating testset "+str(di)+", for domain size "+str(domain_size)+" for "+fname)
-            u_tests1 = [] 
-            for i in range(20): # use max 20 , reduce to NUM_TESTS later on
-                with math.precision(64):
-                    x = domain_size*math.tensor(np.arange(0,diff_ks.resolution),spatial('x'))/diff_ks.resolution 
-                    cosfac = -0.1 + 0.2*np.random.sample() # -0.1 to 0.1 
-                    sinfac = -2.0 + 4.0*np.random.sample() # -4 to 4 
-                    u_test_n = [ math.expand( math.cos(math.PI*x) + cosfac*math.cos(2*math.PI*x/domain_size) * (1-sinfac*math.sin(2*math.PI*x/domain_size) ), batch=1) ] 
-                    u_iter = u_test_n[0]
-                    for i in range(5200):
-                        u_iter = diff_ks.etrk2(u_iter,domain_size=domain_size)
-                        u_test_n.append(u_iter)
-                u_tests1.append( tensor(u_test_n,instance('time') , u_iter.shape).numpy(['b','time', 'x']).astype(np.single) )
+            u_tests1 = []
+            for i in range(20):  # use max 20 , reduce to NUM_TESTS later on
+                x = domain_size * np.arange(0, diff_ks.resolution) / diff_ks.resolution
+                cosfac = -0.1 + 0.2 * np.random.sample()
+                sinfac = -2.0 + 4.0 * np.random.sample()
+
+                u_test_n = [np.cos(np.pi * x) + cosfac * np.cos(2 * np.pi * x / domain_size) *
+                            (1 - sinfac * np.sin(2 * np.pi * x / domain_size))]
+
+                u_iter = u_test_n[0]
+                for i in range(5200):
+                    u_iter = diff_ks.etrk2(u_iter, domain_size=domain_size)
+                    u_test_n.append(u_iter)
+
+                u_tests1.append(np.stack(u_test_n).astype(np.float32))
             u_tests1 = np.asarray(u_tests1)
             u_tests1 = u_tests1[:,200:,:] # crop first 200 warmup steps, note code below could be simplified to start at #0, starting at #200 not "wrong" though
             log("generated testdata "+format([u_tests1.shape, domain_size])+' at '+fname)
